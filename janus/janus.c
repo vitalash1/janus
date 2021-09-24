@@ -28,7 +28,7 @@ float janus_GetElapsedTime(void) {
     if(timerStarted) {
         uint24_t newTime;
         float outputValue;
-        newTime = (float)timer_Get(JANUS_TIMER_NUMBER);
+        newTime = timer_Get(JANUS_TIMER_NUMBER);
         outputValue = ((float)newTime - previousTime) / 32000;
         if(outputValue < 0) {
             // This condition is true when the timer overflows and restarts, so the line of code below makes sure to fix anomalies
