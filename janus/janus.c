@@ -9,6 +9,18 @@ uint8_t janus_PressedKeys[KB_DATA_SIZE];
 uint8_t janus_PressedOrReleasedKeys[KB_DATA_SIZE];
 
 
+uint24_t janus_Max(uint24_t x, uint24_t y) {
+    return y > x ? y : x;
+}
+uint24_t janus_Min(uint24_t x, uint24_t y) {
+    return y > x ? x : y;
+}
+int24_t janus_LerpInt24(int24_t x, int24_t y, float alpha) {
+    return (int24_t)(x+(y-x)*alpha);
+}
+
+
+
 void janus_UpdateDebouncedKeys(void) {
     static uint8_t janus_LastPressed[KB_DATA_SIZE];
     uint8_t i;
@@ -48,56 +60,79 @@ float janus_GetElapsedTime(void) {
     }
 }
 
-int24_t janus_LerpInt24(int24_t x, int24_t y, float alpha) {
-    return (int24_t)(x+(y-x)*alpha);
-}
+
 
 //https://easings.net/ for reference
-static float janus_GetAnimationAlpha(enum janus_AnimationEasingMode easingMode, float progress, float length) {
-    float percentage = progress/length;
+float janus_GetEaseProgress(enum janus_EasingMode easingMode, float alpha) {
     switch(easingMode) {
         case LINEAR:
-            return percentage;
+            return alpha;
         case QUAD_IN:
-            return percentage*percentage;
+            return alpha * alpha;
         case QUAD_OUT:
-            return 1-(1-percentage)*(1-percentage);
+            return 1 - (1 - alpha) * (1 - alpha);
         case QUAD_IN_OUT:
-            return percentage <= 0.5 ? (2 * percentage * percentage) : (1-(-2* percentage + 2)*(-2* percentage + 2) / 2);
+            return alpha <= 0.5 ? (2 * alpha * alpha) : (1 - (-2 * alpha + 2) * (-2 * alpha + 2) / 2);
     }
 }
-void janus_UpdateAnimation(struct janus_Animation* animation, float elapsedTime) {
+void janus_UpdateEase(struct janus_Ease* ease, float elapsedTime) {
     float alpha;
 
     if(elapsedTime == 0) {
         return;
     }
     
-    animation->progress = animation->progress + (animation->reverse ? -elapsedTime : elapsedTime);
-    if(animation->progress > animation->length) {
-        animation->progress = animation->length;
+    ease->progress = ease->progress + (ease->reverse ? -elapsedTime : elapsedTime);
+    if(ease->progress > ease->length) {
+        ease->progress = ease->length;
     }
-    if(animation->progress < 0) {
-        animation->progress = 0;
+    if(ease->progress < 0) {
+        ease->progress = 0;
     }
-    alpha = janus_GetAnimationAlpha(animation->easingMode,animation->progress,animation->length);
-    if(animation->fromX != animation->toX) {
-        animation->currentX = janus_LerpInt24(animation->fromX,animation->toX,alpha);
+    alpha = janus_GetEaseProgress(ease->easingMode,ease->progress/ease->length);
+    if(ease->fromX != ease->toX) {
+        ease->currentX = janus_LerpInt24(ease->fromX,ease->toX,alpha);
     } else {
-        animation->currentX = animation->toX;
+        ease->currentX = ease->toX;
     }
-    if(animation->fromY != animation->toY) {
-        animation->currentY = janus_LerpInt24(animation->fromY,animation->toY,alpha);
+    if(ease->fromY != ease->toY) {
+        ease->currentY = janus_LerpInt24(ease->fromY,ease->toY,alpha);
     } else {
-        animation->currentY = animation->toY;
+        ease->currentY = ease->toY;
     }
 }
 
-uint24_t janus_Max(uint24_t x, uint24_t y) {
-    return y > x ? y : x;
+void janus_UpdateAnimation(struct janus_Animation* animation, float elapsedTime) {
+    float maxLength = 0;
+    animation->currentElapsed += elapsedTime;
+    
+    if(animation->useVariableTimings) {
+        for(uint24_t i = 0; i < animation->frameCount; i++) {
+            maxLength += animation->variableTimings[i];
+        }
+    } else {
+        maxLength = animation->frameCount * animation->constantTiming;
+    }
+    if(animation->currentElapsed >= maxLength) {
+        animation->currentElapsed -= maxLength;
+    }
+
+    if(animation->useVariableTimings) {
+        float counter = 0;
+        for(uint24_t i = 0; i < animation->frameCount; i++) {
+            counter += animation->variableTimings[i];
+            if(counter >= animation->currentElapsed) {
+                animation->currentFrame = i;
+                break;
+            }
+        }
+    } else {
+        animation->currentFrame = animation->currentElapsed / animation->constantTiming;
+    }
+    animation->currentFrame %= animation->frameCount;
 }
-uint24_t janus_Min(uint24_t x, uint24_t y) {
-    return y > x ? x : y;
+gfx_sprite_t* janus_GetAnimationFrame(struct janus_Animation* animation) {
+    return animation->frames[animation->currentFrame];
 }
 
 
