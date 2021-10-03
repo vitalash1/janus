@@ -2,6 +2,9 @@
 A library I made to aid me in making games for the TI-84+CE with the CE C Toolchain (https://github.com/CE-Programming/toolchain)  
   
 Current Features:  
-► A simple implementation of key debouncing (just pressed, just released, and just pressed or released)  
-► A way to get the delta time since the last frame  
-► A few functions to allow for 2D eased animations  
+- Simple key debouncing
+- Quick way to get frame delta time
+- A system for positional easing with the following eases: LINEAR, QUAD_IN, QUAD_OUT, and QUAD_IN_OUT
+- A system for drawing animated sprites with variable frame lengths
+- A system for updating and drawing a "QuickUI" for rapid prototyping.
+- A method for quick and easy screen-shakes.
