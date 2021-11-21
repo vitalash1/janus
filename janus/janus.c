@@ -1,7 +1,10 @@
+
 #include <tice.h>
 #include <keypadc.h>
 #include <graphx.h>
+#include <time.h>
 
+#include <debug.h>
 #include "janus.h"
 
 uint8_t janus_ReleasedKeys[KB_DATA_SIZE];
@@ -12,13 +15,162 @@ uint8_t janus_PressedOrReleasedKeys[KB_DATA_SIZE];
 uint24_t janus_Max(uint24_t x, uint24_t y) {
     return y > x ? y : x;
 }
+
 uint24_t janus_Min(uint24_t x, uint24_t y) {
     return y > x ? x : y;
 }
-int24_t janus_LerpInt24(int24_t x, int24_t y, float alpha) {
-    return (int24_t)(x+(y-x)*alpha);
+
+struct janus_Vector2 janus_AddVectors(struct janus_Vector2* x, struct janus_Vector2* y) {
+    struct janus_Vector2 out;
+    out.x = x->x + y->x;
+    out.y = x->y + y->y;
+    return out;
 }
 
+struct janus_Vector2 janus_SubtractVectors(struct janus_Vector2* x, struct janus_Vector2* y) {
+    struct janus_Vector2 out;
+    out.x = x->x - y->x;
+    out.y = x->y - y->y;
+    return out;
+}
+
+struct janus_Vector2 janus_MultiplyVectors(struct janus_Vector2* x, struct janus_Vector2* y) {
+    return (struct janus_Vector2) {x->x * y->x, x->y * y->y};
+}
+
+struct janus_Vector2 janus_DivideVectors(struct janus_Vector2* x, struct janus_Vector2* y) {
+    return (struct janus_Vector2) {x->x / y->x, x->y / y->y};
+}
+
+int24_t janus_SmallestOfFour(int24_t a, int24_t b, int24_t c, int24_t d) {
+    int24_t min_ab, min_cd;
+    min_ab = a < b ? a : b;
+    min_cd = c < d ? c : d;
+    return min_ab < min_cd ? min_ab : min_cd;
+}
+int24_t janus_LerpInt24(int24_t x, int24_t y, float alpha) {
+    return (x+(y-x)*alpha);
+}
+int24_t janus_LerpInt24ByInt(int24_t x, int24_t y, int24_t alpha) {
+    return x + JANUS_APPLY_DELTA_TIME((y - x),alpha);
+}
+int24_t janus_Pow(int24_t x, int24_t y) {
+    return y > 0 ? x*janus_Pow(x,y-1) : 1;
+}
+
+float janus_Sin(float x) {
+    return (16.0f*x*(JANUS_PI - x)) / ((5.0f*JANUS_PI*JANUS_PI) - (4.0f*x*(JANUS_PI-x)));
+}
+
+
+
+bool janus_Collision(struct janus_Rect* object1, struct janus_Rect* object2) {
+    return object1->position.x + object1->size.x > object2->position.x && object1->position.y + object1->size.y > object2->position.y && object2->position.y + object2->size.y > object1->position.y && object2->position.x + object2->size.x > object1->position.x;
+}
+
+bool janus_HandleObjectObjectCollision(struct janus_PhysicsObject* object1, struct janus_PhysicsObject* object2) {
+    bool onFloor = false;
+    if(!janus_Collision(&object1->rect,&object2->rect)) {
+        return false;
+    }
+    int24_t obj1RightWall = object1->rect.position.x + object1->rect.size.x;
+    int24_t obj2RightWall = object2->rect.position.x + object2->rect.size.x;
+    int24_t obj1BottomWall = object1->rect.position.y + object1->rect.size.y;
+    int24_t obj2BottomWall = object2->rect.position.y + object2->rect.size.y;
+    
+    int24_t pushObj1Right = (obj2RightWall - object1->rect.position.x);
+    int24_t pushObj1Left = -(obj1RightWall - object2->rect.position.x);
+    int24_t pushObj1Down = (obj2BottomWall - object1->rect.position.y);
+    int24_t pushObj1Up = -(obj1BottomWall - object2->rect.position.y);
+
+    int24_t smallestMovement = janus_SmallestOfFour(JANUS_ABS(pushObj1Right),JANUS_ABS(pushObj1Left),JANUS_ABS(pushObj1Down),JANUS_ABS(pushObj1Up));
+
+    int24_t object1Influence = object1->anchored ? 0 : object1->resistance;
+    int24_t object2Influence = object2->anchored ? 0 : object2->resistance;
+    int24_t totalInfluence = object1Influence + object2Influence;
+
+    if(smallestMovement == (JANUS_ABS(pushObj1Right))) {
+        int24_t amt1 = pushObj1Right * object1Influence / totalInfluence;
+        int24_t amt2 = pushObj1Right * object2Influence / totalInfluence;
+        object1->rect.position.x += amt1;
+        object2->rect.position.x -= amt2;
+        object1->velocity.x -= ((object1->velocity.x) < 0 ? -1 : 0) * janus_Min(JANUS_ABS(amt1),JANUS_ABS(object1->velocity.x));
+        object2->velocity.x -= ((object2->velocity.x) < 0 ? -1 : 0) * janus_Min(JANUS_ABS(amt2),JANUS_ABS(object2->velocity.x));
+    } else if(smallestMovement == JANUS_ABS(pushObj1Left)) {
+        int24_t amt1 = pushObj1Left * object1Influence / totalInfluence;
+        int24_t amt2 = pushObj1Left * object2Influence / totalInfluence;
+        object1->rect.position.x += amt1;
+        object2->rect.position.x -= amt2;
+        object1->velocity.x -= ((object1->velocity.x) < 0 ? -1 : 0) * janus_Min(JANUS_ABS(amt1),JANUS_ABS(object1->velocity.x));
+        object2->velocity.x -= ((object2->velocity.x) < 0 ? -1 : 0) * janus_Min(JANUS_ABS(amt2),JANUS_ABS(object2->velocity.x));
+    } else if(smallestMovement == JANUS_ABS(pushObj1Up)) {
+        int24_t amt1 = pushObj1Up * object1Influence / totalInfluence;
+        int24_t amt2 = pushObj1Up * object2Influence / totalInfluence;
+        object1->rect.position.y += amt1;
+        object2->rect.position.y -= amt2;
+        object1->velocity.y -= ((object1->velocity.y) < 0 ? -1 : 0) * janus_Min(JANUS_ABS(amt1),JANUS_ABS(object1->velocity.y));
+        object2->velocity.y -= ((object2->velocity.y) < 0 ? -1 : 0) * janus_Min(JANUS_ABS(amt2),JANUS_ABS(object2->velocity.y));
+        onFloor = true;
+    } else if(smallestMovement == JANUS_ABS(pushObj1Down)) {
+        int24_t amt1 = pushObj1Down * object1Influence / totalInfluence;
+        int24_t amt2 = pushObj1Down * object2Influence / totalInfluence;
+        object1->rect.position.y += amt1;
+        object2->rect.position.y -= amt2;
+        object1->velocity.y -= ((object1->velocity.y) < 0 ? -1 : 0) * janus_Min(JANUS_ABS(amt1),JANUS_ABS(object1->velocity.y));
+        object2->velocity.y -= ((object2->velocity.y) < 0 ? -1 : 0) * janus_Min(JANUS_ABS(amt2),JANUS_ABS(object2->velocity.y));
+    }
+    return onFloor;
+}
+
+bool janus_HandleObjectRectCollision(struct janus_PhysicsObject* object1, struct janus_Rect* rect) {
+    bool onFloor = false;
+    if(!janus_Collision(&object1->rect,rect)) {
+        return false;
+    }
+    int24_t obj1RightWall = object1->rect.position.x + object1->rect.size.x;
+    int24_t obj2RightWall = rect->position.x + rect->size.x;
+    int24_t obj1BottomWall = object1->rect.position.y + object1->rect.size.y;
+    int24_t obj2BottomWall = rect->position.y + rect->size.y;
+    
+    int24_t pushObj1Right = (obj2RightWall - object1->rect.position.x);
+    int24_t pushObj1Left = -(obj1RightWall - rect->position.x);
+    int24_t pushObj1Down = (obj2BottomWall - object1->rect.position.y);
+    int24_t pushObj1Up = -(obj1BottomWall - rect->position.y);
+
+    int24_t smallestMovement = janus_SmallestOfFour(JANUS_ABS(pushObj1Right),JANUS_ABS(pushObj1Left),JANUS_ABS(pushObj1Down),JANUS_ABS(pushObj1Up));
+
+    if(smallestMovement == (JANUS_ABS(pushObj1Right))) {
+        object1->rect.position.x += pushObj1Right;
+        object1->velocity.x = 0;
+    } else if(smallestMovement == JANUS_ABS(pushObj1Left)) {
+        object1->rect.position.x += pushObj1Left;
+        object1->velocity.x = 0;
+    } else if(smallestMovement == JANUS_ABS(pushObj1Up)) {
+        object1->rect.position.y += pushObj1Up;
+        object1->velocity.y = 0;
+        onFloor = true;
+    } else if(smallestMovement == JANUS_ABS(pushObj1Down)) {
+        object1->rect.position.y += pushObj1Down;
+        object1->velocity.y = 0;
+    }
+    return onFloor;
+}
+
+
+void janus_AddForce(struct janus_PhysicsObject* object, struct janus_Vector2* velocity) { 
+    object->velocity = janus_AddVectors(&object->velocity,velocity);
+}
+
+void janus_DampenVelocity(struct janus_PhysicsObject* object, struct janus_Vector2* dampen) {
+    struct janus_Vector2 divided = janus_DivideVectors(&object->velocity,dampen);
+    object->velocity = janus_SubtractVectors(&object->velocity,&divided);
+}
+
+void janus_ApplyVelocity(struct janus_PhysicsObject* object, int24_t deltaMS) {
+    struct janus_Vector2 delta = (struct janus_Vector2){JANUS_APPLY_DELTA_TIME(object->velocity.x,deltaMS),JANUS_APPLY_DELTA_TIME(object->velocity.y,deltaMS)};
+    object->rect.position = janus_AddVectors(&object->rect.position,&delta);
+    object->velocity = janus_SubtractVectors(&object->velocity,&delta);
+}
 
 
 void janus_UpdateDebouncedKeys(void) {
@@ -35,99 +187,93 @@ void janus_UpdateDebouncedKeys(void) {
     }
 }
 
-float janus_GetElapsedTime(void) {
-    static uint8_t timerStarted = 0;
-    static uint24_t previousTime = 0;
-    if(timerStarted) {
-        uint24_t newTime;
-        float outputValue;
-        newTime = (float)timer_Get(JANUS_TIMER_NUMBER);
-        outputValue = ((float)newTime - previousTime) / 32000;
-        if(outputValue < 0) {
-            // This condition is true when the timer overflows and restarts, so the line of code below makes sure to fix anomalies
-            // (When it overflows, the float captures a negative value)
-            outputValue = outputValue + (UINT24_MAX/32000.0f);
-        }
-        previousTime = newTime;
-        return outputValue;
-    } else {
-        //Starts timer
-        timer_Disable(JANUS_TIMER_NUMBER);
-        timer_Set(JANUS_TIMER_NUMBER,0);
-        timer_Enable(JANUS_TIMER_NUMBER,TIMER_32K,TIMER_NOINT,JANUS_TIMER_DIRECTION);
-        timerStarted = 1;
-        return 0.0f;
-    }
+int24_t janus_GetDeltaTime(void) {
+    static clock_t previousTime;
+    clock_t currentTime = clock();
+    int24_t output = 0;
+
+    output = (currentTime - previousTime) * 1000 / CLOCKS_PER_SEC;
+
+    previousTime = currentTime;
+    return output;
+}
+
+int24_t janus_GetFPS(int24_t msElapsed) {
+    return 1000 / msElapsed;
 }
 
 
 
 //https://easings.net/ for reference
-float janus_GetEaseProgress(enum janus_EasingMode easingMode, float alpha) {
+uint24_t janus_GetEaseProgress(enum janus_EasingMode easingMode, uint24_t alpha) {
     switch(easingMode) {
         case LINEAR:
             return alpha;
         case QUAD_IN:
-            return alpha * alpha;
+            return JANUS_APPLY_DELTA_TIME(alpha,alpha);
         case QUAD_OUT:
-            return 1 - (1 - alpha) * (1 - alpha);
+            return JANUS_ONE_SECOND - JANUS_APPLY_DELTA_TIME((JANUS_ONE_SECOND - alpha),(JANUS_ONE_SECOND - alpha));
         case QUAD_IN_OUT:
-            return alpha <= 0.5 ? (2 * alpha * alpha) : (1 - (-2 * alpha + 2) * (-2 * alpha + 2) / 2);
+            return alpha <= JANUS_ONE_SECOND/2 ? (2 * JANUS_APPLY_DELTA_TIME(alpha,alpha)) : (1000 - JANUS_APPLY_DELTA_TIME((-2 * alpha + 2000),(-2 * alpha + 2000)) / 2);
     }
 }
-void janus_UpdateEase(struct janus_Ease* ease, float elapsedTime) {
-    float alpha;
+void janus_UpdateEase(struct janus_Ease* ease, int24_t msElapsed) {
+    int24_t alpha;
 
-    if(elapsedTime == 0) {
+    if(msElapsed == 0) {
         return;
     }
     
-    ease->progress = ease->progress + (ease->reverse ? -elapsedTime : elapsedTime);
+    ease->progress = ease->progress + (ease->reverse ? -msElapsed : msElapsed);
     if(ease->progress > ease->length) {
         ease->progress = ease->length;
     }
     if(ease->progress < 0) {
         ease->progress = 0;
     }
-    alpha = janus_GetEaseProgress(ease->easingMode,ease->progress/ease->length);
+    alpha = janus_GetEaseProgress(ease->easingMode,ease->progress*1000/ease->length);
     if(ease->fromX != ease->toX) {
-        ease->currentX = janus_LerpInt24(ease->fromX,ease->toX,alpha);
+        ease->currentX = janus_LerpInt24ByInt(ease->fromX,ease->toX,alpha);
     } else {
         ease->currentX = ease->toX;
     }
     if(ease->fromY != ease->toY) {
-        ease->currentY = janus_LerpInt24(ease->fromY,ease->toY,alpha);
+        ease->currentY = janus_LerpInt24ByInt(ease->fromY,ease->toY,alpha);
     } else {
         ease->currentY = ease->toY;
     }
 }
 
-void janus_UpdateAnimation(struct janus_Animation* animation, float elapsedTime) {
+void janus_UpdateAnimation(struct janus_Animation* animation, int24_t msElapsed) {
     float maxLength = 0;
-    animation->currentElapsed += elapsedTime;
-    
+    animation->msElapsed += msElapsed;
     if(animation->useVariableTimings) {
         for(uint24_t i = 0; i < animation->frameCount; i++) {
-            maxLength += animation->variableTimings[i];
+            maxLength += animation->frameTimings.variableTimings[i];
         }
     } else {
-        maxLength = animation->frameCount * animation->constantTiming;
+        maxLength = animation->frameCount * animation->frameTimings.constantTiming;
     }
-    if(animation->currentElapsed >= maxLength) {
-        animation->currentElapsed -= maxLength;
+    if(animation->msElapsed >= maxLength) {
+        if(animation->loop) {
+            animation->msElapsed -= maxLength;
+        } else {
+            animation->currentFrame = animation->frameCount-1;
+            return;
+        }
     }
 
     if(animation->useVariableTimings) {
-        float counter = 0;
+        uint24_t counterMS = 0;
         for(uint24_t i = 0; i < animation->frameCount; i++) {
-            counter += animation->variableTimings[i];
-            if(counter >= animation->currentElapsed) {
+            counterMS += animation->frameTimings.variableTimings[i];
+            if(counterMS >= animation->msElapsed) {
                 animation->currentFrame = i;
                 break;
             }
         }
     } else {
-        animation->currentFrame = animation->currentElapsed / animation->constantTiming;
+        animation->currentFrame = animation->msElapsed / animation->frameTimings.constantTiming;
     }
     animation->currentFrame %= animation->frameCount;
 }
