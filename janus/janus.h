@@ -8,6 +8,9 @@ extern "C" {
 /* Allows us to index janus_ReleasedKeys, janus_PressedKeys, and janus_PressedOrReleasedKeys just as we would index kb_Data from keypadc.h */
 #define KB_DATA_SIZE 8
 
+/* PI approximation */
+#define JANUS_PI 3.1415926535f
+
 /* Timer macros */
 #define JANUS_TIMER_NUMBER 1
 #define JANUS_TIMER_DIRECTION TIMER_UP
@@ -24,15 +27,54 @@ extern "C" {
 /* Animation Macros */
 #define JANUS_ANIMATION_MAX_FRAMES 64
 
+/* One second in milliseconds */
+#define JANUS_ONE_SECOND 1000
+
+/* Misc Helper Macros */
+
+#define JANUS_ABS(number) ((number > 0) ? (number) : -(number))
+
+
+/* Animation Initialization Macros */
+
+/**
+ * Puts false, then a uint24_t will become uint24_t constantTiming in the janus_FrameTiming union
+ * 
+ * @example JANUS_ANIMATION_INIT_CONSTANT_TIMING(500)
+ * @note Use in place of JANUS_ANIMATION_INIT_VARIABLE_TIMING to use constant timing
+**/
+#define JANUS_ANIMATION_INIT_CONSTANT_TIMING(milliseconds) .useVariableTimings = false, {.constantTiming = milliseconds}
+
+/**
+ * Puts true, then a list of uint24_t in the input will become uint24_t variableTimings[JANUS_ANIMATION_MAX_FRAMES] in the janus_FrameTiming union
+ * Useful for declaring a janus_Animation
+ * 
+ * @example JANUS_ANIMATION_INIT_VARIABLE_TIMING(1000,100,100,100,100,100,500,100,100,100,150,200)
+ * @note Use in place of JANUS_ANIMATION_INIT_CONSTANT_TIMING to use variable timing
+**/
+#define JANUS_ANIMATION_INIT_VARIABLE_TIMING(...) .useVariableTimings = true, {.variableTimings = {__VA_ARGS__}}
+
+
+/* Time Helper Macros */
+
+/**
+ * Helpful for using delta time to apply motion over a certain time period.
+ * Gives the same result as multiplying x by msElapsed if msElapsed were a float repesenting a number of seconds
+ * 
+ * @param x A variable for msElapsed to be appleid to.
+ * @param msElapsed An int representing a number of milliseconds in delta time
+**/
+#define JANUS_APPLY_DELTA_TIME(x,msElapsed) (x*msElapsed/JANUS_ONE_SECOND)
+
 extern uint8_t janus_ReleasedKeys[KB_DATA_SIZE];
 extern uint8_t janus_PressedKeys[KB_DATA_SIZE];
 extern uint8_t janus_PressedOrReleasedKeys[KB_DATA_SIZE];
 
 enum janus_EasingMode {
-    LINEAR,
-    QUAD_IN,
-    QUAD_OUT,
-    QUAD_IN_OUT
+    LINEAR, //No easing
+    QUAD_IN, //Ease into motion
+    QUAD_OUT, //Ease out of motion
+    QUAD_IN_OUT //Ease into and out of motion
 };
 
 struct janus_Ease {
@@ -44,18 +86,22 @@ struct janus_Ease {
     int24_t toY; // End of ease Y
     int24_t currentX; // These values are animated when updating the ease using janus_UpdateEase(...)
     int24_t currentY; // These values are animated when updating the ease using janus_UpdateEase(...)
-    float length; // How long the ease should be in seconds
-    float progress; // How far, in seconds, we are in the ease
+    int24_t length; // How long the ease should be in milliseconds
+    int24_t progress; // How far, in milliseconds, we are into the ease
+};
+
+union janus_FrameTiming {
+    uint24_t variableTimings[JANUS_ANIMATION_MAX_FRAMES]; //Array of millisecond timings per frame
+    uint24_t constantTiming; //Millisecond timings for every frame
 };
 
 struct janus_Animation {
     uint24_t frameCount; // Number of frames
     gfx_sprite_t* frames[JANUS_ANIMATION_MAX_FRAMES]; // List of pointers to gfx_sprites
     bool useVariableTimings; // If true, each frame will have their own timing, specified in "variableTimings." Otherwise, each frame will have a constant framerate
-    float variableTimings[JANUS_ANIMATION_MAX_FRAMES]; // Used if useVariableTimings is true - List should specify number of seconds for each respective frame
-    float constantTiming; // Used if useVaraibleTimings is false - Each frame will last for this amount of time
+    union janus_FrameTiming frameTimings;
     bool loop; // Whether or not to loop animation
-    float currentElapsed; // Current progress (in seconds) in the animation; initialize at zero for most cases
+    uint24_t msElapsed; // Current progress (in milliseconds) of the animation; initialize at zero for most cases
     uint24_t currentFrame; // Current frame in the animation; initialize at zero for most cases
 };
 
@@ -76,6 +122,23 @@ struct janus_QuickUI {
     uint8_t cursorPosition; // Position of cursor
     uint8_t numberOfOptions; //Number of options to be used (Don't exceed JANUS_QUICKUI_MAX_OPTIONS)
     char* options[JANUS_QUICKUI_MAX_OPTIONS]; //Array of option texts
+};
+
+struct janus_Vector2 {
+    int24_t x;
+    int24_t y;
+};
+
+struct janus_Rect {
+    struct janus_Vector2 position;
+    struct janus_Vector2 size;
+};
+
+struct janus_PhysicsObject {
+    struct janus_Rect rect; //Position and size of object
+    struct janus_Vector2 velocity; //Velocity of object
+    int24_t resistance; //How willing an object is to move against other physics objects. The higher the value, the more it will move when pushed by an object with lower value.
+    bool anchored;
 };
 
 /********************/
@@ -103,6 +166,50 @@ uint24_t janus_Max(uint24_t x, uint24_t y);
 uint24_t janus_Min(uint24_t x, uint24_t y);
 
 /**
+ * Adds two vectors; x + y
+ * 
+ * @param x first vector
+ * @param y second vector
+ * @returns struct janus_Vector2 
+ */
+struct janus_Vector2 janus_AddVectors(struct janus_Vector2* x, struct janus_Vector2* y);
+
+/**
+ * Subtracts vectors; x - y
+ * 
+ * @param x this minus y
+ * @param y x minus this
+ * @returns struct janus_Vector2 
+ */
+struct janus_Vector2 janus_SubtractVectors(struct janus_Vector2* x, struct janus_Vector2* y);
+
+/**
+ * Multiplies vectors; x * y
+ * 
+ * @param x this times y
+ * @param y x times this
+ * @returns struct janus_Vector2 
+ */
+struct janus_Vector2 janus_MultiplyVectors(struct janus_Vector2* x, struct janus_Vector2* y);
+
+/**
+ * Divides vectors; x / y
+ * 
+ * @param x this divided by y
+ * @param y x divided by this
+ * @returns struct janus_Vector2 
+ */
+struct janus_Vector2 janus_DivideVectors(struct janus_Vector2* x, struct janus_Vector2* y);
+
+
+// (https://stackoverflow.com/questions/19199473/biggest-and-smallest-of-four-integers-no-arrays-no-functions-fewest-if-stat/19199615)
+/**
+ * Finds the smallest value of four inputs
+ * 
+ * @returns the smallest of four inputs
+**/ 
+int24_t janus_SmallestOfFour(int24_t a, int24_t b, int24_t c, int24_t d);
+/**
  * Linearly interpolates between X and Y using alpha for the percentage between (0-1)
  * 
  * @param x Interpolate from coordinate
@@ -112,7 +219,90 @@ uint24_t janus_Min(uint24_t x, uint24_t y);
 **/ 
 int24_t janus_LerpInt24(int24_t x, int24_t y, float alpha);
 
+/**
+ * Linearly interpolates between X and Y using alpha for the percentage between (0-1000)
+ * 
+ * @param x Interpolate from coordinate
+ * @param y Interpolate to coordinate
+ * @param alpha How far (0 to 1000) between from and to?
+ * @returns integer interpolated between X and Y using alpha
+**/ 
+int24_t janus_LerpInt24ByInt(int24_t x, int24_t y, int24_t alpha);
 
+/**
+ * Returns x to the yth power
+ * 
+ * @param x Base number
+ * @param y Exponent
+ * @returns x^y
+**/ 
+int24_t janus_Pow(int24_t x, int24_t y);
+
+/**
+ * Approximates sine
+ * 
+ * @param x radians
+ * @returns Sine of x radians
+ * @note Probably works, but if something breaks this function could be at fault
+**/ 
+float janus_Sin(float x);
+
+
+/***********************/
+/* Physics & Collision */
+/***********************/
+
+/**
+ * Returns whether or not two janus_Rect are colliding
+ * 
+ * @returns bool of whether or not there is a collision between object1 and object2
+**/
+bool janus_Collision(struct janus_Rect* object1, struct janus_Rect* object2);
+
+/**
+ * If colliding, two passed objects get pushed away from each other through the smallest possible movement, influenced by each object's "resistance" or how willing it is to not move against other physics objects
+ * 
+ * @param object1 first object handling collisions
+ * @param object2 second obect handling collisions
+ * 
+ * @returns true if object1 is pushing on top of object2, treating 2 like a floor (good for making a player jump if true)
+ */
+bool janus_HandleObjectObjectCollision(struct janus_PhysicsObject* object1, struct janus_PhysicsObject* object2);
+
+/**
+ * A function that uses slightly less operations than janus_HandleObjectObjectCollision to be used for situations such as a physics object against the floor or a wall
+ * 
+ * @param object1 the physics object to handle collisions for
+ * @param rect the rectangle the physics object is being tested with
+ * 
+ * @returns true if object1 is pushing on top of the rect like a floor (good for jump logic)
+ */
+bool janus_HandleObjectRectCollision(struct janus_PhysicsObject* object1, struct janus_Rect* rect);
+
+/**
+ * Adds the given input to an object's velocity
+ * 
+ * @param object object to add the velocity to
+ * @param velocity velocity to add to the object
+ */
+
+void janus_AddForce(struct janus_PhysicsObject* object, struct janus_Vector2* velocity);
+
+/**
+ * You must call this if you want your object's velocity to move the object, or simply add velocity to position yourself (though you would miss out on the delta time being applied)
+ * 
+ * @param object
+ */
+void janus_ApplyVelocity(struct janus_PhysicsObject* object, int24_t deltaMS);
+
+
+/**
+ * Reduces the object's velocity using vector "dampen." The higher "dampen" is, the less the object will be dampened. {1,1} will result in zero velocity.
+ * 
+ * @param object object to dampen
+ * @param dampen object's velocity reduced using this 
+ */
+void janus_DampenVelocity(struct janus_PhysicsObject* object, struct janus_Vector2* dampen);
 
 /***************************/
 /* Debouncing & Delta Time */
@@ -126,13 +316,20 @@ int24_t janus_LerpInt24(int24_t x, int24_t y, float alpha);
 void janus_UpdateDebouncedKeys(void);
 
 /** 
- * Gives time (in seconds) since last time the function was called.
- * If not called previously, the function sets a 32k Hz timer in Timer *1* (https://ce-programming.github.io/toolchain/master/headers/tice.html#c.timer_Enable)
- * and returns zero-seconds.
- * @returns float containing time since last function call (in seconds)
+ * Converts milliseconds delta time into frames per second
+ * @param msElapsed acquired by calling janus_GetDeltaTime at the start of each frame
+ * @returns frame rate based on input delta time
 **/
-float janus_GetElapsedTime(void);
+int24_t janus_GetFPS(int24_t msElapsed);
 
+/** 
+ * Gives milliseconds since the last time the function was called.
+ * 
+ * @returns uint24_t containing the number of milliseconds since the function was last called.
+ * 
+ * @example To use this for a certain amount of movement per second, multiply milliseconds by your movement per second and divide that by a thousand *for* the amount of movement to apply that frame.
+**/
+int24_t janus_GetDeltaTime(void);
 
 
 /************************/
@@ -143,9 +340,9 @@ float janus_GetElapsedTime(void);
  * Adds elapsedTime to the ease pointer's progress and updates the ease's currentX and currentY based on the easing mode
  * 
  * @param ease A pointer to the ease object (janus_Ease) to update
- * @param elapsedTime The time to add to the ease progress
+ * @param msElapsed The time (in milliseconds) to add to the ease progress
 **/
-void janus_UpdateEase(struct janus_Ease* ease, float elapsedTime);
+void janus_UpdateEase(struct janus_Ease* ease, int24_t msElapsed);
 
 /**
  * Returns the progress of an easing mode based on alpha (0-1).
@@ -155,7 +352,7 @@ void janus_UpdateEase(struct janus_Ease* ease, float elapsedTime);
  * 
  * @returns float containing progress of ease
 **/
-float janus_GetEaseProgress(enum janus_EasingMode easingMode, float alpha);
+uint24_t janus_GetEaseProgress(enum janus_EasingMode easingMode, uint24_t alpha);
 
 /**
  * Updates an animation by setting the current frame/elapsed time.
@@ -163,7 +360,7 @@ float janus_GetEaseProgress(enum janus_EasingMode easingMode, float alpha);
  * @param animation Pointer to animation to update
  * @param elapsedTime Time since last call to update animation
 **/ 
-void janus_UpdateAnimation(struct janus_Animation* animation, float elapsedTime);
+void janus_UpdateAnimation(struct janus_Animation* animation, int24_t msElapsed);
 
 /**
  * Returns a pointer to the current frame of an animation
