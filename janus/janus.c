@@ -245,7 +245,7 @@ void janus_UpdateEase(struct janus_Ease* ease, int24_t msElapsed) {
 }
 
 void janus_UpdateAnimation(struct janus_Animation* animation, int24_t msElapsed) {
-    float maxLength = 0;
+    uint24_t maxLength = 0;
     animation->msElapsed += msElapsed;
     if(animation->useVariableTimings) {
         for(uint24_t i = 0; i < animation->frameCount; i++) {
