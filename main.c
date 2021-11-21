@@ -188,7 +188,7 @@ void update(struct Demo* demo, int24_t deltaMS) {
         // Handle collisions between object 1 and object 2. If the result is true, that means the first argument, object 1, is pushing down on top of object 2. This means we can jump.
         if(janus_HandleObjectObjectCollision(&demo->object1,&demo->object2))
             ableToJump = true;
-        dbg_sprintf(dbgout,"PLAYERX VELOC %d\n",demo->object1.velocity.x);
+        
         // Left/Right Movement for Object 1, the player 
         if(kb_Data[7] & kb_Right) {
             janus_AddForce(&demo->object1,&(struct janus_Vector2){PLAYER_SPEED,0});
