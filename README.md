@@ -8,3 +8,4 @@ Current Features:
 - A system for drawing animated sprites with variable frame lengths
 - A system for updating and drawing a "QuickUI" for rapid prototyping.
 - A method for quick and easy screen-shakes.
+- A limited physics system
